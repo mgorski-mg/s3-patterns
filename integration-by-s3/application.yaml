@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Resources:
+  IntegrationBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              KMSMasterKeyID: !GetAtt KmsKey.Arn
+              SSEAlgorithm: aws:kms
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  IntegrationBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref IntegrationBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          # aws:SecureTransport is needed only for unencrypted buckets - encrypted buckets require HTTPS by default
+          - Sid: deny-non-https
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub ${IntegrationBucket.Arn}
+              - !Sub ${IntegrationBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: deny-low-tls
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub ${IntegrationBucket.Arn}
+              - !Sub ${IntegrationBucket.Arn}/*
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+          - Sid: deny-different-kms-key
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub ${IntegrationBucket.Arn}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption-aws-kms-key-id: !GetAtt KmsKey.Arn
+
+  IntegrationUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: allowToUseS3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${IntegrationBucket.Arn}
+                  - !Sub ${IntegrationBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                Resource: !GetAtt KmsKey.Arn
+
+  IntegrationUserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref IntegrationUser
+
+  IntegrationUserStore:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}-integration-user
+      KmsKeyId: !GetAtt KmsKey.Arn
+      SecretString: !Sub '{"ACCESS_KEY":"${IntegrationUserAccessKey}","SECRET_KEY":"${IntegrationUserAccessKey.SecretAccessKey}"}'
+
+  KmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Integration by s3 KMS Key
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Sub ${AWS::StackName}-kms-key
+        Statement:
+          - Sid: Allow all
+            Effect: Allow
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Action: kms:*
+            Resource: '*'
+
+  KmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/${AWS::StackName}
+      TargetKeyId: !GetAtt KmsKey.Arn
