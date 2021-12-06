@@ -55,6 +55,11 @@ Resources:
       Handler: NewFileLogger.handler
       Runtime: nodejs14.x
 
+  NewFileLoggerFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${NewFileLoggerFunction}
+
   NewFileRule:
     Type: AWS::Events::Rule
     Properties:

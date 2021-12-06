@@ -1,6 +1,6 @@
-# S3 Patterns - Notification EventBridge
+# S3 Patterns - New file on S3 notification to Lambda using EventBridge and CloudTrail
 
-Sample app to show how to notify Lambda about new object using EventBridge.
+Sample app to show how to notify Lambda about new object using EventBridge and CloudTrail.
 
 ## Setup
 
