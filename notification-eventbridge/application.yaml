@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  NewFileLoggerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: NewFileLogger/
+      Handler: NewFileLogger.handler
+      Runtime: nodejs14.x
+
+  NewFileLoggerFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${NewFileLoggerFunction}
+
+  NewFileRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail:
+          eventName:
+            - PutObject
+          requestParameters:
+            bucketName:
+              - !Ref SourceBucket
+      Targets:
+        - Arn: !GetAtt NewFileLoggerFunction.Arn
+          Id: NewFileLoggerFunctionTarget
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NewFileLoggerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt NewFileRule.Arn
